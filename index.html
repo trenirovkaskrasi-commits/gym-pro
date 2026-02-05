@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="bg">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Абонаментни Карти PRO+</title>
+    
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#2563eb">
+    <link rel="apple-touch-icon" href="icon-512.png">
+
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('sw.js');
+        });
+      }
+    </script>
+
+    <style>
+        :root {
+            --primary-color: #2563eb;
+            --bg-color: #f3f4f6;
+            --card-bg: #ffffff;
+            --text-color: #1f2937;
+            --border-radius: 12px;
+            --danger-red: #ef4444;
+            --success-green: #10b981;
+            --renew-blue: #3b82f6;
+            --warning-orange: #f59e0b;
+        }
+
+        [data-theme="dark"] {
+            --bg-color: #111827;
+            --card-bg: #1f2937;
+            --text-color: #f9fafb;
+            --primary-color: #3b82f6;
+        }
+
+        body { 
+            font-family: 'Segoe UI', sans-serif; 
+            background: var(--bg-color); 
+            color: var(--text-color); 
+            margin: 0; padding: 0;
+            transition: 0.3s ease;
+        }
+
+        header { background: var(--primary-color); color: white; padding: 1rem; display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 100; }
+        .container { padding: 1rem; padding-bottom: 80px; }
+        .search-box { width: 100%; padding: 12px; margin-bottom: 15px; border-radius: 10px; border: 1px solid #ddd; font-size: 16px; box-sizing: border-box; }
+
+        .client-card { background: var(--card-bg); border-radius: var(--border-radius); padding: 12px; margin-bottom: 12px; display: grid; grid-template-columns: 60px 1fr 50px; align-items: center; gap: 12px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); cursor: pointer; }
+        .client-photo { width: 60px; height: 60px; border-radius: 50%; object-fit: cover; background: #eee; }
+        .remaining-badge { background: var(--primary-color); color: white; padding: 8px; border-radius: 10px; text-align: center; font-weight: bold; }
+
+        .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 1000; overflow-y: auto; }
+        .modal-content { background: var(--card-bg); margin: 10px auto; width: 92%; max-width: 480px; border-radius: var(--border-radius); padding: 20px; box-sizing: border-box; }
+        .close-btn { float: right; font-size: 30px; cursor: pointer; color: #999; }
+
+        input, select, button, textarea { width: 100%; padding: 12px; margin: 8px 0; border-radius: 8px; border: 1px solid #ccc; font-size: inherit; box-sizing: border-box; }
+        .btn-mark { background: var(--success-green); color: white; border: none; font-weight: bold; }
+        .btn-renew { background: var(--renew-blue); color: white; border: none; font-weight: bold; }
+        .btn-danger { background: var(--danger-red); color: white; border: none; font-weight: bold; margin-top: 15px; }
+        
+        .info-panel { background: rgba(0,0,0,0.03); border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; margin: 10px 0; }
+        .info-row { display: flex; justify-content: space-between; margin-bottom: 4px; }
+        .info-value { font-weight: bold; }
+
+        .history-item { padding: 8px; border-bottom: 1px solid #eee; font-size: 14px; }
+        .btn-view-all { background: none; border: 1px solid var(--primary-color); color: var(--primary-color); font-size: 13px; padding: 6px; cursor: pointer; border-radius: 6px; margin: 8px auto; display: block; width: auto; }
+
+        .fab { position: fixed; bottom: 20px; right: 20px; width: 60px; height: 60px; background: var(--primary-color); color: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 30px; border: none; box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
+    </style>
+</head>
+<body data-theme="light">
+
+    <header>
+        <h2 id="app-title" style="margin:0;">АБОНАМЕНТНИ КАРТИ</h2>
+        <div onclick="toggleModal('settingsModal')" style="font-size: 30px; cursor: pointer;">⚙️</div>
+    </header>
+
+    <div class="container">
+        <input type="text" id="searchInput" class="search-box" placeholder="🔎 Търси клиент..." oninput="renderClients()">
+        <div id="clientList"></div>
+    </div>
+
+    <button class="fab" onclick="openAddClientModal()">+</button>
+
+    <div id="addClientModal" class="modal">
+        <div class="modal-content">
+            <span class="close-btn" onclick="toggleModal('addClientModal')">&times;</span>
+            <h3 id="modalActionTitle">Нов Клиент</h3>
+            <label>Снимка:</label>
+            <input type="file" id="clientPhotoInput" accept="image/*" capture="camera">
+            <label>Име и Фамилия:</label>
+            <input type="text" id="clientName">
+            
+            <div id="editOnlyFields" style="display:none; background: #fff7ed; padding: 10px; border-radius: 8px; border: 1px solid #fdba74;">
+                <label>Ръчна корекция на оставащи:</label>
+                <input type="number" id="editRemaining">
+            </div>
+
+            <div id="paymentFields">
+                <label>Пакет:</label>
+                <select id="packageSelect" onchange="updateSummary()"></select>
+                <label>Отстъпка:</label>
+                <select id="discountSelect" onchange="updateSummary()">
+                    <option value="0">0%</option><option value="4">4%</option><option value="8">8%</option>
+                </select>
+                <label>Срок:</label>
+                <select id="validitySelect" onchange="updateSummary()">
+                    <option value="0">Без срок</option>
+                    <option value="30" selected>30 дни</option>
+                    <option value="45">45 дни</option>
+                    <option value="60">60 дни</option>
+                </select>
+                <div id="priceSummary" class="info-panel" style="text-align: center;">
+                    <div id="summaryPrice" style="font-weight: bold; color: var(--primary-color);"></div>
+                    <div id="summaryDate" style="font-size: 13px;"></div>
+                </div>
+            </div>
+
+            <button style="background: var(--primary-color); color:white; font-weight:bold;" onclick="saveClient()">ЗАПАЗИ</button>
+        </div>
+    </div>
+
+    <div id="detailsModal" class="modal">
+        <div class="modal-content" id="detailsContent"></div>
+    </div>
+
+    <div id="settingsModal" class="modal">
+        <div class="modal-content">
+            <span class="close-btn" onclick="toggleModal('settingsModal')">&times;</span>
+            <h3>⚙️ Настройки</h3>
+            
+            <label>Тема:</label>
+            <select id="themeSelect" onchange="changeTheme(this.value)">
+                <option value="light">☀️ Светла</option>
+                <option value="dark">🌙 Тъмна</option>
+            </select>
+
+            <label>Размер на шрифта: <span id="fontLabel">16</span>px</label>
+            <input type="range" min="14" max="24" value="16" oninput="changeFontSize(this.value)">
+
+            <label>Заглавие:</label>
+            <input type="text" id="titleInput">
+
+            <label>Пакети (брой,цена):</label>
+            <textarea id="settingPackages" rows="4"></textarea>
+
+            <label>Типове тренировки:</label>
+            <textarea id="settingWorkouts" rows="4"></textarea>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 15px;">
+                <button onclick="exportData()" style="background:#4b5563; color:white;">ЕКСПОРТ</button>
+                <button onclick="document.getElementById('importFile').click()" style="background:#10b981; color:white;">ИМПОРТ</button>
+            </div>
+            <input type="file" id="importFile" style="display:none" onchange="importData(event)">
+
+            <button style="background: var(--primary-color); color:white; margin-top:15px;" onclick="saveSettings()">ЗАПАЗИ И ЗАТВОРИ</button>
+        </div>
+    </div>
+
+    <script>
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        function playSound(type) {
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.connect(gain); gain.connect(audioCtx.destination);
+            if (type === 'beep') {
+                osc.frequency.setValueAtTime(880, audioCtx.currentTime);
+                gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+                osc.start(); osc.stop(audioCtx.currentTime + 0.1);
+            } else if (type === 'cash') {
+                osc.type = 'triangle'; osc.frequency.setValueAtTime(1000, audioCtx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(1500, audioCtx.currentTime + 0.1);
+                gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+                osc.start(); osc.stop(audioCtx.currentTime + 0.2);
+            }
+        }
+
+        let db;
+        const dbRequest = indexedDB.open("GymPhotoDB", 1);
+        dbRequest.onupgradeneeded = e => e.target.result.createObjectStore("photos", { keyPath: "id" });
+        dbRequest.onsuccess = e => { db = e.target.result; renderClients(); };
+
+        let clients = JSON.parse(localStorage.getItem('clients')) || [];
+        let config = JSON.parse(localStorage.getItem('gymConfig')) || {
+            title: "АБОНАМЕНТНИ КАРТИ",
+            packages: "8,100\n10,125\n12,150\n16,200\n20,250",
+            workouts: "Цяло тяло, Бутащи мускули, Дърпащи мускули, Горна част, Долна част, Кръгова тренировка, Крака, Ръце, Пудовка",
+            fontSize: 16,
+            theme: "light"
+        };
+
+        let editingClientId = null;
+        let isRenewing = false;
+
+        function initConfig() {
+            document.getElementById('app-title').innerText = config.title;
+            document.getElementById('titleInput').value = config.title;
+            document.getElementById('settingPackages').value = config.packages;
+            document.getElementById('settingWorkouts').value = config.workouts;
+            document.getElementById('themeSelect').value = config.theme;
+            changeTheme(config.theme);
+            changeFontSize(config.fontSize);
+            
+            const pkgSelect = document.getElementById('packageSelect');
+            pkgSelect.innerHTML = "";
+            config.packages.split('\n').forEach(line => {
+                const parts = line.split(',');
+                if(parts.length === 2) {
+                    const opt = document.createElement('option');
+                    opt.value = line.trim();
+                    opt.innerText = `${parts[0]} тренировки - ${parts[1]}€`;
+                    pkgSelect.appendChild(opt);
+                }
+            });
+            updateSummary();
+        }
+
+        function changeTheme(theme) {
+            document.body.setAttribute('data-theme', theme);
+            config.theme = theme;
+        }
+
+        function changeFontSize(val) {
+            document.body.style.fontSize = val + 'px';
+            document.getElementById('fontLabel').innerText = val;
+            config.fontSize = val;
+        }
+
+        function updateSummary() {
+            const pkgValue = document.getElementById('packageSelect').value;
+            if(!pkgValue) return;
+            const price = parseFloat(pkgValue.split(',')[1]);
+            const disc = parseInt(document.getElementById('discountSelect').value);
+            const total = price - (price * (disc / 100));
+            document.getElementById('summaryPrice').innerText = `Крайна цена: ${total.toFixed(2)}€`;
+            const days = parseInt(document.getElementById('validitySelect').value);
+            if (days > 0) {
+                const d = new Date(); d.setDate(d.getDate() + days);
+                document.getElementById('summaryDate').innerText = `Валиден до: ${d.toLocaleDateString('bg-BG')}`;
+            } else { document.getElementById('summaryDate').innerText = "Без крайна дата"; }
+        }
+
+        function toggleModal(id) {
+            const m = document.getElementById(id);
+            m.style.display = (m.style.display === 'block') ? 'none' : 'block';
+        }
+
+        function openAddClientModal() {
+            editingClientId = null; isRenewing = false;
+            document.getElementById('modalActionTitle').innerText = "Нов Клиент";
+            document.getElementById('clientName').value = "";
+            document.getElementById('editOnlyFields').style.display = 'none';
+            document.getElementById('paymentFields').style.display = 'block';
+            toggleModal('addClientModal');
+        }
+
+        async function saveClient() {
+            const name = document.getElementById('clientName').value.trim();
+            if(!name) return alert("Въведете име!");
+            const pkgData = document.getElementById('packageSelect').value.split(',');
+            const days = parseInt(document.getElementById('validitySelect').value);
+            const timeStr = new Date().toLocaleString('bg-BG', {day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit'});
+            
+            let cid = editingClientId || Date.now().toString();
+            let idx = clients.findIndex(c => c.id === cid);
+            let photoFile = document.getElementById('clientPhotoInput').files[0];
+
+            if (photoFile) {
+                const reader = new FileReader();
+                reader.readAsDataURL(photoFile);
+                reader.onload = () => {
+                    db.transaction("photos", "readwrite").objectStore("photos").put({ id: cid, data: reader.result });
+                    renderClients();
+                };
+            }
+
+            if (idx !== -1) {
+                if (isRenewing) {
+                    clients[idx].totalTrainings = parseInt(pkgData[0]);
+                    clients[idx].remainingTrainings = parseInt(pkgData[0]);
+                    if(days > 0) { let d = new Date(); d.setDate(d.getDate() + days); clients[idx].validUntil = d.getTime(); }
+                    else { clients[idx].validUntil = null; }
+                    clients[idx].history.push({ text: `${timeStr} - 🔄 ПОДНОВЕН` });
+                    playSound('cash');
+                } else {
+                    clients[idx].name = name;
+                    clients[idx].remainingTrainings = parseInt(document.getElementById('editRemaining').value);
+                }
+            } else {
+                let vUntil = null;
+                if (days > 0) { let d = new Date(); d.setDate(d.getDate() + days); vUntil = d.getTime(); }
+                clients.push({
+                    id: cid, name: name,
+                    totalTrainings: parseInt(pkgData[0]), remainingTrainings: parseInt(pkgData[0]),
+                    validUntil: vUntil, history: [{ text: `${timeStr} - 🆕 Начало` }]
+                });
+                playSound('cash');
+            }
+            localStorage.setItem('clients', JSON.stringify(clients));
+            renderClients(); toggleModal('addClientModal');
+        }
+
+        async function showDetails(id) {
+            const client = clients.find(c => c.id === id);
+            const photo = await getPhoto(id);
+            const workouts = config.workouts.split(',').map(w => w.trim());
+            const isExpired = client.validUntil && client.validUntil < Date.now();
+            const done = client.totalTrainings - client.remainingTrainings;
+
+            document.getElementById('detailsContent').innerHTML = `
+                <span class="close-btn" onclick="toggleModal('detailsModal')">&times;</span>
+                <div style="text-align:center; margin-bottom:10px;">
+                    <img src="${photo || 'https://via.placeholder.com/100'}" style="width:110px;height:110px;border-radius:50%;object-fit:cover; border:3px solid var(--primary-color);">
+                </div>
+                <div class="info-panel">
+                    <div class="info-row"><span>Име:</span><span class="info-value">${client.name}</span></div>
+                    <div class="info-row"><span>Пакет:</span><span class="info-value">${client.totalTrainings} тр.</span></div>
+                    <div class="info-row"><span>Направени/Оставащи:</span><span class="info-value">${done} / ${client.remainingTrainings}</span></div>
+                    <div class="info-row"><span>Валиден до:</span><span class="info-value" style="color:${isExpired ? 'red' : 'inherit'}">${client.validUntil ? new Date(client.validUntil).toLocaleDateString('bg-BG') : 'Без срок'}</span></div>
+                </div>
+                
+                ${client.remainingTrainings > 0 && !isExpired ? `
+                    <select id="workoutType">${workouts.map(w => `<option>${w}</option>`).join('')}</select>
+                    <button class="btn-mark" onclick="markWorkout('${client.id}')">МАРКИРАЙ ТРЕНИРОВКА</button>
+                ` : `<button class="btn-renew" onclick="renewSubscription('${client.id}')">ПОДНОВЯВАНЕ НА АБОНАМЕНТ</button>`}
+
+                <div style="margin-top:15px; border-top:1px solid #eee;">
+                    <strong>Хронология:</strong>
+                    <div id="histContainer">${client.history.slice(-3).reverse().map(h => `<div class="history-item">${h.text}</div>`).join('')}</div>
+                    ${client.history.length > 3 ? `<button class="btn-view-all" onclick="showFullHistory('${client.id}')">ВИЖ ЦЯЛАТА ХРОНОЛОГИЯ</button>` : ''}
+                </div>
+
+                <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-top:20px;">
+                    <button style="background:#7360f2; color:white;" onclick="sendViber('${client.id}')">VIBER</button>
+                    <button style="background:#eee; color:#333;" onclick="confirmEdit('${client.id}')">РЕДАКТИРАЙ</button>
+                </div>
+                <button class="btn-danger" onclick="confirmDelete('${client.id}')">ИЗТРИЙ ПРОФИЛ</button>
+            `;
+            if (document.getElementById('detailsModal').style.display !== 'block') toggleModal('detailsModal');
+        }
+
+        function markWorkout(id) {
+            playSound('beep');
+            const client = clients.find(c => c.id === id);
+            client.remainingTrainings--;
+            const type = document.getElementById('workoutType').value;
+            const time = new Date().toLocaleString('bg-BG', {day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit'});
+            client.history.push({ text: `${time} - ${type}` });
+            localStorage.setItem('clients', JSON.stringify(clients));
+            showDetails(id); renderClients();
+        }
+
+        function confirmEdit(id) {
+            if(confirm("⚠️ ВНИМАНИЕ: Ще влезете в режим на РЕДАКЦИЯ. Продължаваме ли?")) {
+                editingClientId = id; isRenewing = false;
+                const client = clients.find(c => c.id === id);
+                toggleModal('detailsModal');
+                document.getElementById('modalActionTitle').innerText = "Редакция";
+                document.getElementById('clientName').value = client.name;
+                document.getElementById('editRemaining').value = client.remainingTrainings;
+                document.getElementById('editOnlyFields').style.display = 'block';
+                document.getElementById('paymentFields').style.display = 'none';
+                toggleModal('addClientModal');
+            }
+        }
+
+        function confirmDelete(id) {
+            if(confirm("🚨 Сигурни ли сте, че искате да изтриете профила?")) {
+                clients = clients.filter(c => c.id !== id);
+                localStorage.setItem('clients', JSON.stringify(clients));
+                db.transaction("photos", "readwrite").objectStore("photos").delete(id);
+                toggleModal('detailsModal');
+                renderClients();
+            }
+        }
+
+        function renderClients() {
+            const list = document.getElementById('clientList');
+            const search = document.getElementById('searchInput').value.toLowerCase();
+            list.innerHTML = "";
+            const filtered = clients.filter(c => c.name.toLowerCase().includes(search)).sort((a,b) => a.name.localeCompare(b.name));
+            filtered.forEach(async (client) => {
+                const photo = await getPhoto(client.id);
+                const isExpired = client.validUntil && client.validUntil < Date.now();
+                let bColor = 'var(--primary-color)';
+                if (client.remainingTrainings <= 0 || isExpired) bColor = '#94a3b8';
+                else if (client.remainingTrainings <= 2) bColor = 'var(--warning-orange)';
+                const card = document.createElement('div');
+                card.className = 'client-card';
+                card.onclick = () => showDetails(client.id);
+                card.innerHTML = `<img src="${photo || 'https://via.placeholder.com/60'}" class="client-photo" style="${isExpired ? 'border:2px solid red' : ''}">
+                    <div><strong>${client.name}</strong><br><small style="color:${isExpired ? 'red' : 'green'}">${isExpired ? 'Изтекъл' : 'Активен'}</small></div>
+                    <div class="remaining-badge" style="background:${bColor}">${client.remainingTrainings}</div>`;
+                list.appendChild(card);
+            });
+        }
+
+        function saveSettings() {
+            config.title = document.getElementById('titleInput').value;
+            config.packages = document.getElementById('settingPackages').value;
+            config.workouts = document.getElementById('settingWorkouts').value;
+            localStorage.setItem('gymConfig', JSON.stringify(config));
+            initConfig(); toggleModal('settingsModal');
+        }
+
+        async function exportData() {
+            const exportObj = { clients, config, photos: [] };
+            const transaction = db.transaction("photos", "readonly");
+            const store = transaction.objectStore("photos");
+            const allPhotosReq = store.getAll();
+
+            allPhotosReq.onsuccess = function() {
+                exportObj.photos = allPhotosReq.result;
+                const blob = new Blob([JSON.stringify(exportObj)], {type: 'application/json'});
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `backup_FULL_${new Date().toISOString().slice(0,10)}.json`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            };
+        }
+
+        function importData(event) {
+            const reader = new FileReader();
+            reader.onload = async (e) => {
+                try {
+                    const data = JSON.parse(e.target.result);
+                    if (data.clients) {
+                        clients = data.clients;
+                        localStorage.setItem('clients', JSON.stringify(clients));
+                    }
+                    if (data.config) {
+                        config = data.config;
+                        localStorage.setItem('gymConfig', JSON.stringify(config));
+                    }
+                    if (data.photos && data.photos.length > 0) {
+                        const tx = db.transaction("photos", "readwrite");
+                        const store = tx.objectStore("photos");
+                        data.photos.forEach(photo => store.put(photo));
+                        tx.oncomplete = () => {
+                            alert("Всичко е импортирано успешно (вкл. снимките)!");
+                            location.reload();
+                        };
+                    } else {
+                        alert("Данните са импортирани (без снимки).");
+                        location.reload();
+                    }
+                } catch (err) { alert("Грешка: " + err.message); }
+            };
+            reader.readAsText(event.target.files[0]);
+        }
+
+        function getPhoto(id) { return new Promise(resolve => {
+            const req = db.transaction("photos", "readonly").objectStore("photos").get(id);
+            req.onsuccess = () => resolve(req.result ? req.result.data : null);
+        });}
+
+        function renewSubscription(id) {
+            editingClientId = id; isRenewing = true;
+            const client = clients.find(c => c.id === id);
+            toggleModal('detailsModal');
+            document.getElementById('modalActionTitle').innerText = "Подновяване";
+            document.getElementById('clientName').value = client.name;
+            document.getElementById('editOnlyFields').style.display = 'none';
+            document.getElementById('paymentFields').style.display = 'block';
+            updateSummary();
+            toggleModal('addClientModal');
+        }
+
+        function showFullHistory(id) {
+            const client = clients.find(c => c.id === id);
+            document.getElementById('histContainer').innerHTML = client.history.slice().reverse().map(h => `<div class="history-item">${h.text}</div>`).join('');
+            event.target.style.display = 'none';
+        }
+
+        function sendViber(id) {
+            const client = clients.find(c => c.id === id);
+            const text = `🏆 *${config.title}*%0A👤 *Клиент:* ${client.name}%0A📊 *Оставащи:* ${client.remainingTrainings}%0A📅 *Валиден до:* ${client.validUntil ? new Date(client.validUntil).toLocaleDateString('bg-BG') : 'без срок'}`;
+            window.location.href = `viber://forward?text=${text}`;
+        }
+
+        window.onload = initConfig;
+    </script>
+</body>
+</html>

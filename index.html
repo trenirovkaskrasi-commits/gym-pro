@@ -12,7 +12,7 @@
     <script>
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
-          navigator.serviceWorker.register('sw.js?v=2');
+          navigator.serviceWorker.register('sw.js?v=final');
         });
       }
     </script>
@@ -90,7 +90,7 @@
         <div class="modal-content">
             <span class="close-btn" onclick="toggleModal('addClientModal')">&times;</span>
             <h3 id="modalActionTitle">Нов Клиент</h3>
-            <label>Снимка (Камера или Галерия):</label>
+            <label>Снимка:</label>
             <input type="file" id="clientPhotoInput" accept="image/*">
             <label>Име и Фамилия:</label>
             <input type="text" id="clientName">
@@ -484,7 +484,11 @@
 
         function sendViber(id) {
             const client = clients.find(c => c.id === id);
-            const text = `🏆 *${config.title}*%0A👤 *Клиент:* ${client.name}%0A📊 *Оставащи:* ${client.remainingTrainings}%0A📅 *Валиден до:* ${client.validUntil ? new Date(client.validUntil).toLocaleDateString('bg-BG') : 'без срок'}`;
+            // Извличане на последните 3 записа
+            const logs = client.history.slice(-3).reverse().map(h => "• " + h.text).join('%0A');
+            
+            const text = `🏆 *${config.title}*%0A👤 *Клиент:* ${client.name}%0A📊 *Оставащи:* ${client.remainingTrainings}%0A📅 *Валиден до:* ${client.validUntil ? new Date(client.validUntil).toLocaleDateString('bg-BG') : 'без срок'}%0A%0A📝 *Последни активности:*%0A${logs}`;
+            
             window.location.href = `viber://forward?text=${text}`;
         }
 

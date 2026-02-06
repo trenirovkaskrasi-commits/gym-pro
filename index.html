@@ -91,7 +91,7 @@
             <span class="close-btn" onclick="toggleModal('addClientModal')">&times;</span>
             <h3 id="modalActionTitle">Нов Клиент</h3>
             <label>Снимка:</label>
-            <input type="file" id="clientPhotoInput" accept="image/*" capture="camera">
+            <input type="file" id="clientPhotoInput" accept="image/*">
             <label>Име и Фамилия:</label>
             <input type="text" id="clientName">
             
@@ -250,9 +250,11 @@
         }
 
         function openAddClientModal() {
-            editingClientId = null; isRenewing = false;
+            editingClientId = null; 
+            isRenewing = false;
             document.getElementById('modalActionTitle').innerText = "Нов Клиент";
             document.getElementById('clientName').value = "";
+            document.getElementById('clientPhotoInput').value = ""; 
             document.getElementById('editOnlyFields').style.display = 'none';
             document.getElementById('paymentFields').style.display = 'block';
             toggleModal('addClientModal');
